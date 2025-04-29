@@ -1,40 +1,54 @@
-// index.js
-// Archivo principal del bot
-
-const { Client, Intents } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, Events } = require('discord.js');
 const fs = require('fs');
+const path = require('path');
 require('dotenv').config();
-const { PREFIX } = process.env;
 
-const client = new Client({ intents: [Intents.FLAGS.GUILDS, Intents.FLAGS.GUILD_MESSAGES] });
-
-// Cargar comandos
-client.commands = new Map();
-const commandFiles = fs.readdirSync('./commands').filter(file => file.endsWith('.js'));
-for (const file of commandFiles) {
-    const command = require(`./commands/${file}`);
-    client.commands.set(command.name, command);
-}
-
-client.once('ready', () => {
-    console.log(`Bot conectado como ${client.user.tag}`);
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds]
 });
 
-client.on('messageCreate', message => {
-    if (!message.content.startsWith(PREFIX) || message.author.bot) return;
+// Colección de comandos
+client.commands = new Collection();
 
-    const args = message.content.slice(PREFIX.length).trim().split(/ +/);
-    const commandName = args.shift().toLowerCase();
+// Cargar comandos desde /commands
+const commandsPath = path.join(__dirname, 'commands');
+const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
 
-    const command = client.commands.get(commandName);
-    if (!command) return;
+for (const file of commandFiles) {
+  const filePath = path.join(commandsPath, file);
+  const command = require(filePath);
+  if ('data' in command && 'execute' in command) {
+    client.commands.set(command.data.name, command);
+  } else {
+    console.warn(`[ADVERTENCIA] El comando en ${filePath} está incompleto.`);
+  }
+}
 
-    try {
-        command.execute(message, args);
-    } catch (error) {
-        console.error(error);
-        message.reply('Hubo un error al ejecutar ese comando.');
-    }
+// Evento: Bot listo
+client.once(Events.ClientReady, async () => {
+  console.log(`✅ Bot conectado como ${client.user.tag}`);
+
+  try {
+    await client.application.commands.set(client.commands.map(cmd => cmd.data));
+    console.log("📡 Comandos slash registrados globalmente.");
+  } catch (error) {
+    console.error("Error registrando comandos:", error);
+  }
+});
+
+// Evento: Interacción de comandos
+client.on(Events.InteractionCreate, async interaction => {
+  if (!interaction.isChatInputCommand()) return;
+
+  const command = client.commands.get(interaction.commandName);
+  if (!command) return;
+
+  try {
+    await command.execute(interaction);
+  } catch (error) {
+    console.error(error);
+    await interaction.reply({ content: '⚠️ Hubo un error ejecutando este comando.', ephemeral: true });
+  }
 });
 
 client.login(process.env.DISCORD_TOKEN);
