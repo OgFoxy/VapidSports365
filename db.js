@@ -1,24 +1,54 @@
-// db.js
-// Base de datos SQLite
+const Database = require('better-sqlite3');
+const db = new Database('apuestas.db');
 
-const sqlite3 = require('sqlite3').verbose();
+// Crear tablas si no existen
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS users (
+    user_id TEXT PRIMARY KEY,
+    balance INTEGER DEFAULT 1000
+  )
+`).run();
 
-const db = new sqlite3.Database('./bot_database.sqlite', (err) => {
-    if (err) {
-        console.error('Error al conectar con la base de datos:', err.message);
-    } else {
-        console.log('Conexión exitosa a la base de datos SQLite.');
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS apuestas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT,
+    evento TEXT,
+    cantidad INTEGER,
+    resultado TEXT DEFAULT 'pendiente'
+  )
+`).run();
+
+module.exports = {
+  getUser(userId) {
+    const user = db.prepare('SELECT * FROM users WHERE user_id = ?').get(userId);
+    if (!user) {
+      db.prepare('INSERT INTO users (user_id) VALUES (?)').run(userId);
+      return { user_id: userId, balance: 1000 };
     }
-});
+    return user;
+  },
 
-db.serialize(() => {
-    db.run(`
-        CREATE TABLE IF NOT EXISTS users (
-            id TEXT PRIMARY KEY,
-            username TEXT NOT NULL,
-            balance INTEGER DEFAULT 100
-        )
-    `);
-});
+  changeBalance(userId, amount) {
+    this.getUser(userId); // Asegura que existe
+    db.prepare('UPDATE users SET balance = balance + ? WHERE user_id = ?').run(amount, userId);
+  },
 
-module.exports = db;
+  getBalance(userId) {
+    return this.getUser(userId).balance;
+  },
+
+  createBet(userId, evento, cantidad) {
+    this.changeBalance(userId, -cantidad);
+    db.prepare(`
+      INSERT INTO apuestas (user_id, evento, cantidad) VALUES (?, ?, ?)
+    `).run(userId, evento, cantidad);
+  },
+
+  getHistorial(userId, limit = 5) {
+    return db.prepare(`
+      SELECT evento, cantidad, resultado FROM apuestas
+      WHERE user_id = ? ORDER BY id DESC LIMIT ?
+    `).all(userId, limit);
+  }
+};
