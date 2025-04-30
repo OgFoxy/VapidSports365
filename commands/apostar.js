@@ -1,37 +1,39 @@
-// commands/apostar.js
-// Comando para realizar una apuesta
-
+const { SlashCommandBuilder } = require('discord.js');
 const db = require('../db');
 
 module.exports = {
-    name: 'apostar',
-    description: 'Realiza una apuesta con tu saldo.',
-    async execute(message, args) {
-        const userId = message.author.id;
-        const apuesta = parseInt(args[0], 10);
+  data: new SlashCommandBuilder()
+    .setName('apostar')
+    .setDescription('Haz una apuesta en un evento')
+    .addStringOption(option =>
+      option.setName('evento')
+        .setDescription('Nombre del evento (ej. Real Madrid vs Barça)')
+        .setRequired(true)
+    )
+    .addIntegerOption(option =>
+      option.setName('cantidad')
+        .setDescription('Cantidad a apostar')
+        .setRequired(true)
+    ),
 
-        if (!apuesta || isNaN(apuesta) || apuesta <= 0) {
-            return message.reply('Por favor ingresa una cantidad válida para apostar.');
-        }
+  async execute(interaction) {
+    const userId = interaction.user.id;
+    const evento = interaction.options.getString('evento');
+    const cantidad = interaction.options.getInteger('cantidad');
+    const balance = db.getBalance(userId);
 
-        db.get('SELECT balance FROM users WHERE id = ?', [userId], (err, row) => {
-            if (err) {
-                console.error(err.message);
-                return message.reply('Hubo un error al procesar tu apuesta.');
-            }
+    if (cantidad <= 0) {
+      return interaction.reply({ content: '❌ La cantidad debe ser mayor que cero.', ephemeral: true });
+    }
 
-            if (row && row.balance >= apuesta) {
-                const nuevoSaldo = row.balance - apuesta;
-                db.run('UPDATE users SET balance = ? WHERE id = ?', [nuevoSaldo, userId], (err) => {
-                    if (err) {
-                        console.error(err.message);
-                        return message.reply('Hubo un error al actualizar tu saldo.');
-                    }
-                    message.reply(`Has apostado ${apuesta} monedas. Tu nuevo saldo es ${nuevoSaldo} monedas.`);
-                });
-            } else {
-                message.reply('No tienes saldo suficiente para realizar esta apuesta.');
-            }
-        });
-    },
+    if (cantidad > balance) {
+      return interaction.reply({ content: '❌ No tienes suficiente saldo.', ephemeral: true });
+    }
+
+    db.createBet(userId, evento, cantidad);
+    await interaction.reply({
+      content: `✅ Apuesta registrada: **${cantidad} monedas** en **${evento}**.`,
+      ephemeral: true
+    });
+  }
 };
