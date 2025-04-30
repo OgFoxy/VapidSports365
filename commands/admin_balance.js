@@ -1,29 +1,38 @@
-// commands/admin_balance.js
-// Comando administrativo para modificar saldo
-
+const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const db = require('../db');
 
 module.exports = {
-    name: 'admin_balance',
-    description: 'Modifica el saldo de un usuario (solo admins).',
-    async execute(message, args) {
-        if (!message.member.permissions.has('ADMINISTRATOR')) {
-            return message.reply('No tienes permiso para usar este comando.');
-        }
+  data: new SlashCommandBuilder()
+    .setName('admin_balance')
+    .setDescription('Añadir o quitar saldo de un usuario (solo administradores)')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addUserOption(option =>
+      option.setName('usuario')
+        .setDescription('El usuario al que modificar saldo')
+        .setRequired(true)
+    )
+    .addIntegerOption(option =>
+      option.setName('cantidad')
+        .setDescription('Cantidad de saldo a añadir o quitar (puede ser negativo)')
+        .setRequired(true)
+    ),
 
-        const userId = args[0];
-        const nuevoSaldo = parseInt(args[1], 10);
+  async execute(interaction) {
+    const admin = interaction.user;
+    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+      return interaction.reply({ content: '❌ No tienes permisos para usar este comando.', ephemeral: true });
+    }
 
-        if (!userId || isNaN(nuevoSaldo)) {
-            return message.reply('Por favor proporciona un ID de usuario y un saldo válido.');
-        }
+    const usuario = interaction.options.getUser('usuario');
+    const cantidad = interaction.options.getInteger('cantidad');
+    const userId = usuario.id;
 
-        db.run('UPDATE users SET balance = ? WHERE id = ?', [nuevoSaldo, userId], (err) => {
-            if (err) {
-                console.error(err.message);
-                return message.reply('Hubo un error al actualizar el saldo del usuario.');
-            }
-            message.reply(`El saldo del usuario con ID ${userId} ha sido actualizado a ${nuevoSaldo} monedas.`);
-        });
-    },
+    db.changeBalance(userId, cantidad);
+    const nuevoSaldo = db.getBalance(userId);
+
+    await interaction.reply({
+      content: `✅ El saldo de ${usuario} ha sido actualizado a **${nuevoSaldo} monedas**.`,
+      ephemeral: true
+    });
+  }
 };
